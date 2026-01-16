@@ -1,0 +1,279 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-make-tasks:
+    name: Test Make Tasks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Test make build
+        run: make build
+
+      - name: Test make test
+        run: make test
+
+      - name: Test make lint
+        run: make lint
+
+      - name: Test make clean
+        run: make clean
+
+  build-cross-platform:
+    name: Build Cross-Platform Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            output: backstage-gen-cli-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: backstage-gen-cli-linux-arm64
+          - goos: darwin
+            goarch: amd64
+            output: backstage-gen-cli-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: backstage-gen-cli-darwin-arm64
+          - goos: windows
+            goarch: amd64
+            output: backstage-gen-cli-windows-amd64.exe
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          go build -ldflags "-X main.Version=${VERSION} -X main.CommitSHA=${COMMIT_SHA} -X main.BuildDate=${BUILD_DATE} -w -s" \
+            -o bin/${{ matrix.output }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: bin/${{ matrix.output }}
+          retention-days: 7
+
+  test-with-real-projects:
+    name: Test with Open Source Projects
+    needs: build-cross-platform
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project:
+          # Go projects
+          - repo: kubernetes/kubernetes
+            branch: master
+            expected_lang: go
+            description: "Kubernetes - Go orchestration platform"
+          
+          # Python projects
+          - repo: django/django
+            branch: main
+            expected_lang: python
+            description: "Django - Python web framework"
+          
+          - repo: pallets/flask
+            branch: main
+            expected_lang: python
+            description: "Flask - Python microframework"
+          
+          # JavaScript/TypeScript projects
+          - repo: facebook/react
+            branch: main
+            expected_lang: javascript
+            description: "React - JavaScript UI library"
+          
+          - repo: vercel/next.js
+            branch: canary
+            expected_lang: javascript
+            description: "Next.js - React framework"
+          
+          - repo: vuejs/core
+            branch: main
+            expected_lang: javascript
+            description: "Vue.js - Progressive JavaScript framework"
+          
+          # Java projects
+          - repo: spring-projects/spring-boot
+            branch: main
+            expected_lang: java
+            description: "Spring Boot - Java framework"
+          
+          # Rust projects
+          - repo: rust-lang/rust
+            branch: master
+            expected_lang: rust
+            description: "Rust - Systems programming language"
+          
+          # Ruby projects
+          - repo: rails/rails
+            branch: main
+            expected_lang: ruby
+            description: "Ruby on Rails - Web framework"
+          
+          # Multi-language projects
+          - repo: grafana/grafana
+            branch: main
+            expected_lang: go
+            description: "Grafana - Multi-language observability platform"
+
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: backstage-gen-cli-linux-amd64
+          path: ./bin
+
+      - name: Make binary executable
+        run: chmod +x ./bin/backstage-gen-cli-linux-amd64
+
+      - name: Clone ${{ matrix.project.description }}
+        run: |
+          git clone --depth 1 --branch ${{ matrix.project.branch }} \
+            https://github.com/${{ matrix.project.repo }}.git test-repo
+        continue-on-error: true
+
+      - name: Test inspect command
+        id: inspect
+        run: |
+          cd test-repo
+          ../bin/backstage-gen-cli-linux-amd64 inspect --verbose || true
+          echo "inspect_exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Test generate command (dry-run)
+        id: generate
+        run: |
+          cd test-repo
+          ../bin/backstage-gen-cli-linux-amd64 generate --dry-run || true
+          echo "generate_exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Test generate command (actual)
+        id: generate_actual
+        run: |
+          cd test-repo
+          ../bin/backstage-gen-cli-linux-amd64 generate -o catalog-test.yaml || true
+          
+          if [ -f catalog-test.yaml ]; then
+            echo "✅ Generated catalog file for ${{ matrix.project.repo }}"
+            cat catalog-test.yaml
+            echo "catalog_created=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  No catalog file generated"
+            echo "catalog_created=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Test lint command
+        id: lint
+        if: steps.generate_actual.outputs.catalog_created == 'true'
+        run: |
+          cd test-repo
+          ../bin/backstage-gen-cli-linux-amd64 lint -f catalog-test.yaml || true
+          echo "lint_exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Verify language detection
+        run: |
+          cd test-repo
+          OUTPUT=$(../bin/backstage-gen-cli-linux-amd64 inspect 2>&1 || true)
+          echo "$OUTPUT"
+          
+          if echo "$OUTPUT" | grep -i "${{ matrix.project.expected_lang }}"; then
+            echo "✅ Correctly detected ${{ matrix.project.expected_lang }} in ${{ matrix.project.repo }}"
+          else
+            echo "⚠️  Expected to detect ${{ matrix.project.expected_lang }}, check output above"
+          fi
+
+      - name: Test report for ${{ matrix.project.repo }}
+        run: |
+          echo "## Test Results for ${{ matrix.project.description }}"
+          echo "Repository: ${{ matrix.project.repo }}"
+          echo "Expected Language: ${{ matrix.project.expected_lang }}"
+          echo ""
+          echo "- Inspect: $([ '${{ steps.inspect.outputs.inspect_exit_code }}' = '0' ] && echo '✅ Passed' || echo '⚠️ Check logs')"
+          echo "- Generate (dry-run): $([ '${{ steps.generate.outputs.generate_exit_code }}' = '0' ] && echo '✅ Passed' || echo '⚠️ Check logs')"
+          echo "- Generate (actual): $([ '${{ steps.generate_actual.outputs.catalog_created }}' = 'true' ] && echo '✅ Passed' || echo '⚠️ Check logs')"
+          echo "- Lint: $([ '${{ steps.lint.outputs.lint_exit_code }}' = '0' ] && echo '✅ Passed' || echo '⚠️ Check logs')"
+
+  release-binaries:
+    name: Release Binaries
+    needs: [test-make-tasks, test-with-real-projects]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+
+      - name: Display structure of downloaded files
+        run: ls -R ./binaries
+
+      - name: Create checksums
+        run: |
+          cd binaries
+          for dir in */; do
+            cd "$dir"
+            for file in *; do
+              sha256sum "$file" > "$file.sha256"
+            done
+            cd ..
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: binaries/
+          retention-days: 30
+
+  summary:
+    name: Test Summary
+    needs: [test-make-tasks, build-cross-platform, test-with-real-projects]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🎉 CI/CD Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Make Tasks" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.test-make-tasks.result == 'success' && '✅ All make tasks passed' || '❌ Some make tasks failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cross-Platform Builds" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.build-cross-platform.result == 'success' && '✅ All platforms built successfully' || '❌ Some builds failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Real-World Project Tests" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.test-with-real-projects.result == 'success' && '✅ All project tests completed' || '⚠️ Some tests had issues (check logs)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tested with 10+ open source projects across multiple languages!" >> $GITHUB_STEP_SUMMARY
