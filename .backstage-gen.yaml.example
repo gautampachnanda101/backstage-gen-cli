@@ -1,0 +1,29 @@
+# Backstage Generator Configuration Example
+
+organization:
+  name: "your-organization"
+  namespace: "default"
+
+defaults:
+  owner: "platform-team"
+  system: "core-infrastructure"
+  lifecycle: "production"
+
+detection:
+  markers:
+    - name: "golang"
+      files: ["go.mod", "go.sum"]
+      type: "service"
+    - name: "python"
+      files: ["requirements.txt", "pyproject.toml"]
+      type: "service"
+    - name: "kubernetes"
+      files: ["k8s/**/*.yaml"]
+      type: "resource"
+
+validation:
+  strict: false
+  required_fields:
+    - "metadata.name"
+    - "metadata.description"
+    - "spec.owner"
