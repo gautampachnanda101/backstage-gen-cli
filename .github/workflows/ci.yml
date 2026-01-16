@@ -86,6 +86,7 @@ jobs:
     needs: build-cross-platform
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         project:
           # Go projects
@@ -203,6 +204,7 @@ jobs:
         continue-on-error: true
 
       - name: Verify language detection
+        continue-on-error: true
         run: |
           cd test-repo
           OUTPUT=$(../bin/backstage-gen-cli-linux-amd64 inspect 2>&1 || true)
@@ -212,6 +214,7 @@ jobs:
             echo "✅ Correctly detected ${{ matrix.project.expected_lang }} in ${{ matrix.project.repo }}"
           else
             echo "⚠️  Expected to detect ${{ matrix.project.expected_lang }}, check output above"
+            exit 1
           fi
 
       - name: Test report for ${{ matrix.project.repo }}
