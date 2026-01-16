@@ -21,9 +21,11 @@ type OrganizationConfig struct {
 }
 
 type DefaultsConfig struct {
-	Owner     string `yaml:"owner"`
-	System    string `yaml:"system"`
-	Lifecycle string `yaml:"lifecycle"`
+	Owner       string            `yaml:"owner"`
+	System      string            `yaml:"system"`
+	Lifecycle   string            `yaml:"lifecycle"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Tags        []string          `yaml:"tags,omitempty"`
 }
 
 func Load() (*AppConfig, error) {
@@ -113,6 +115,16 @@ defaults:
   owner: platform-team
   system: ""
   lifecycle: production
+  
+  # Custom annotations to add to all generated catalogs
+  # annotations:
+  #   company.io/team: "platform"
+  #   company.io/slack-channel: "#backstage"
+  
+  # Custom tags to add to all generated catalogs
+  # tags:
+  #   - internal
+  #   - company-standard
 
 # ═══════════════════════════════════════════════════════════
 # LiteLLM Configuration Examples

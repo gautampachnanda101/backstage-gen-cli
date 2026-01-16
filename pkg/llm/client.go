@@ -81,6 +81,53 @@ Keep your response concise and focused on actionable suggestions.`, repoInfo, cu
 	return c.Chat(prompt)
 }
 
+// AnalyzeDomain analyzes the repository to understand its domain and suggest relevant tags
+func (c *Client) AnalyzeDomain(repoInfo string) (DomainAnalysis, error) {
+	prompt := fmt.Sprintf(`Analyze this repository and determine its domain/purpose. Provide your analysis in JSON format.
+
+Repository Information:
+%s
+
+Respond with ONLY valid JSON (no markdown, no extra text) in this exact format:
+{
+  "domain": "web-framework|api|database|cli-tool|library|frontend|backend|devops|data-processing|ml|other",
+  "purpose": "brief one-sentence description",
+  "tags": ["tag1", "tag2", "tag3"],
+  "annotations": {
+    "custom.io/key": "value"
+  }
+}
+
+Tags should be lowercase, hyphenated, and domain-specific (e.g., "rest-api", "microservice", "monitoring", "ci-cd").
+Only include annotations if they're genuinely useful for this specific domain.`, repoInfo)
+
+	response, err := c.Chat(prompt)
+	if err != nil {
+		return DomainAnalysis{}, err
+	}
+
+	// Clean up response - remove markdown code blocks if present
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	var analysis DomainAnalysis
+	if err := json.Unmarshal([]byte(response), &analysis); err != nil {
+		return DomainAnalysis{}, fmt.Errorf("failed to parse LLM response: %w (response: %s)", err, response)
+	}
+
+	return analysis, nil
+}
+
+type DomainAnalysis struct {
+	Domain      string            `json:"domain"`
+	Purpose     string            `json:"purpose"`
+	Tags        []string          `json:"tags"`
+	Annotations map[string]string `json:"annotations"`
+}
+
 func (c *Client) Chat(prompt string) (string, error) {
 	endpoint := c.getEndpoint()
 

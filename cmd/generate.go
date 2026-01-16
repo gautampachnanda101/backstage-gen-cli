@@ -124,10 +124,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 			Namespace: appConfig.Organization.Namespace,
 		},
 		Defaults: generator.DefaultsConfig{
-			Owner:     appConfig.Defaults.Owner,
-			System:    appConfig.Defaults.System,
-			Lifecycle: appConfig.Defaults.Lifecycle,
+			Owner:       appConfig.Defaults.Owner,
+			System:      appConfig.Defaults.System,
+			Lifecycle:   appConfig.Defaults.Lifecycle,
+			Annotations: appConfig.Defaults.Annotations,
+			Tags:        appConfig.Defaults.Tags,
 		},
+		LLM: appConfig.LLM,
 	}
 
 	if genConfig.Organization.Namespace == "" {
