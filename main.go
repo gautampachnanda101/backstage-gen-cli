@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/yourusername/backstage-gen/cmd"
+	"github.com/gautampachnanda101/backstage-gen-cli/cmd"
 )
 
 var (
@@ -16,7 +16,7 @@ var (
 func main() {
 	// Set version info for cobra commands
 	cmd.SetVersionInfo(Version, CommitSHA, BuildDate)
-	
+
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

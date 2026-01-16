@@ -4,32 +4,50 @@ A Go-based CLI tool for streamlining Backstage catalog integration. Automaticall
 
 ## Features
 
-- 🔍 **Auto-detection**: Inspects repository to detect technology stack
+- 🔍 **Auto-detection**: Inspects repository to detect technology stack (20+ languages supported!)
+- 🖥️  **Cross-Platform**: Detects and displays OS, platform, and architecture
+- 🤖 **AI-Powered**: Optional LLM integration for intelligent suggestions (via LiteLLM)
+- 🧙 **Interactive Wizard**: Step-by-step guided catalog generation
 - 📝 **YAML Generation**: Creates properly formatted catalog files
 - ✅ **Validation**: Validates against Backstage schema
 - 🪝 **Pre-commit Integration**: Can be used as a pre-commit hook
 - 🚀 **Fast & Portable**: Single binary with no dependencies
+- 🎨 **Beautiful Output**: Color-coded, easy-to-read terminal output
+- 🐳 **Docker Integration**: Automatic LiteLLM setup using Docker
 
 ## Installation
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/backstage-gen.git
-cd backstage-gen
+git clone https://github.com/gautampachnanda101/backstage-gen-cli.git
+cd backstage-gen-cli
 make build
 sudo make install
 ```
 
 ## Quick Start
 
+### Initialize (First Time Setup)
+
+```bash
+# Initialize with LiteLLM AI support
+backstage-gen init
+
+# Or skip AI features
+backstage-gen init --skip-llm
+```
+
 ### Generate catalog-info.yaml
 
 ```bash
-# Generate in current directory
+# Interactive wizard with AI suggestions
+backstage-gen generate -i
+
+# Auto-generate without prompts
 backstage-gen generate
 
-# Generate with dry-run
+# Preview with dry-run
 backstage-gen generate --dry-run
 
 # Force overwrite

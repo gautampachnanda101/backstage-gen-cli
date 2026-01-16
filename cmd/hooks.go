@@ -12,9 +12,26 @@ import (
 
 var hooksCmd = &cobra.Command{
 	Use:   "hooks [install|uninstall]",
-	Short: "Manage git hooks",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runHooks,
+	Short: "🪝 Manage git hooks",
+	Long: `Manage git hooks for automated validation
+
+Installs or removes a pre-commit hook that automatically
+validates catalog-info.yaml before each commit.
+
+Commands:
+  install      Install the pre-commit hook
+  uninstall    Remove the pre-commit hook
+
+Examples:
+  # Install hook
+  backstage-gen-cli hooks install
+
+  # Remove hook
+  backstage-gen-cli hooks uninstall
+
+The hook will run 'backstage-gen-cli lint' before each commit.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHooks,
 }
 
 func init() {
@@ -46,10 +63,10 @@ func installHook() error {
 	}
 
 	hookScript := `#!/bin/sh
-# backstage-gen pre-commit hook
-echo "Running backstage-gen validation..."
+# backstage-gen-cli pre-commit hook
+echo "Running backstage-gen-cli validation..."
 if [ -f "catalog-info.yaml" ]; then
-    backstage-gen lint
+    backstage-gen-cli lint
     if [ $? -ne 0 ]; then
         echo "❌ Validation failed"
         exit 1
@@ -63,7 +80,12 @@ exit 0
 		return err
 	}
 
-	fmt.Println(color.GreenString("✓") + " Hook installed: " + hookPath)
+	green := color.New(color.FgGreen, color.Bold)
+	fmt.Println()
+	green.Println("✔ Git Hook Installed Successfully!")
+	fmt.Printf("  Location: %s\n", color.CyanString(hookPath))
+	fmt.Println("\n  The hook will now validate catalog-info.yaml before each commit.")
+	fmt.Println()
 	return nil
 }
 
@@ -74,9 +96,9 @@ func uninstallHook() error {
 	}
 
 	hookPath := filepath.Join(gitDir, "hooks", "pre-commit")
-	
+
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
-		fmt.Println("Hook not installed")
+		fmt.Println(color.YellowString("⚠ Hook not currently installed"))
 		return nil
 	}
 
@@ -84,7 +106,11 @@ func uninstallHook() error {
 		return err
 	}
 
-	fmt.Println(color.GreenString("✓") + " Hook uninstalled")
+	green := color.New(color.FgGreen, color.Bold)
+	fmt.Println()
+	green.Println("✔ Git Hook Uninstalled Successfully!")
+	fmt.Printf("  Removed: %s\n", color.CyanString(hookPath))
+	fmt.Println()
 	return nil
 }
 

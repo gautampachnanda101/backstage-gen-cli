@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourusername/backstage-gen/pkg/detector"
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/detector"
 )
 
 type Generator struct {
@@ -121,14 +121,14 @@ func (g *Generator) normalizeName(name string) string {
 	name = strings.ToLower(name)
 	name = strings.ReplaceAll(name, "_", "-")
 	name = strings.ReplaceAll(name, " ", "-")
-	
+
 	var result strings.Builder
 	for _, char := range name {
 		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
 			result.WriteRune(char)
 		}
 	}
-	
+
 	return result.String()
 }
 
@@ -156,7 +156,7 @@ func (g *Generator) addTechnologyLabels(catalog *Catalog, info *detector.Reposit
 
 func (g *Generator) addAnnotations(catalog *Catalog, info *detector.RepositoryInfo) {
 	if info.GitRemote != "" {
-		catalog.Metadata.Annotations["backstage.io/source-location"] = 
+		catalog.Metadata.Annotations["backstage.io/source-location"] =
 			fmt.Sprintf("url:%s", info.GitRemote)
 	}
 	catalog.Metadata.Annotations["generated-by"] = "backstage-gen"
@@ -165,35 +165,35 @@ func (g *Generator) addAnnotations(catalog *Catalog, info *detector.RepositoryIn
 
 func (g *Generator) generateTags(info *detector.RepositoryInfo) []string {
 	tags := []string{}
-	
+
 	for _, lang := range info.Languages {
 		tags = append(tags, strings.ToLower(lang))
 	}
-	
+
 	for _, fw := range info.Frameworks {
 		tags = append(tags, strings.ToLower(fw))
 	}
-	
+
 	if info.HasDocker {
 		tags = append(tags, "docker")
 	}
 	if info.HasKubernetes {
 		tags = append(tags, "kubernetes")
 	}
-	
+
 	return uniqueStrings(tags)
 }
 
 func uniqueStrings(slice []string) []string {
 	seen := make(map[string]bool)
 	result := []string{}
-	
+
 	for _, item := range slice {
 		if !seen[item] {
 			seen[item] = true
 			result = append(result, item)
 		}
 	}
-	
+
 	return result
 }

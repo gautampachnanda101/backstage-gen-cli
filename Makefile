@@ -4,7 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-BINARY_NAME := backstage-gen
+BINARY_NAME := backstage-gen-cli
 BUILD_DIR := bin
 INSTALL_DIR := /usr/local/bin
 
@@ -19,6 +19,7 @@ help:
 	@echo '  lint        Run linters'
 	@echo '  clean       Clean build artifacts'
 	@echo '  install     Install binary to system'
+	@echo '  run         Build and run the binary'
 
 build:
 	@echo "Building $(BINARY_NAME) $(VERSION)..."

@@ -4,19 +4,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/fatih/color"
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/detector"
 	"github.com/spf13/cobra"
-	"github.com/yourusername/backstage-gen/pkg/detector"
 )
 
 var jsonOutput bool
 
 var inspectCmd = &cobra.Command{
 	Use:   "inspect",
-	Short: "Inspect repository and show detected information",
-	RunE:  runInspect,
+	Short: "🔍 Inspect repository and show detected information",
+	Long: `Inspect repository and show detected information
+
+Analyzes your repository to detect:
+  • System information (OS, platform, architecture)
+  • Technology stack (languages, frameworks, build tools)
+  • Infrastructure components (Docker, Kubernetes, etc.)
+  • Git repository information
+
+Examples:
+  # Inspect with formatted output
+  backstage-gen-cli inspect
+
+  # Output as JSON for scripting
+  backstage-gen-cli inspect --json
+
+  # Use in CI/CD pipelines
+  backstage-gen-cli inspect --json | jq '.languages[]'`,
+	RunE: runInspect,
 }
 
 func init() {
@@ -42,41 +58,103 @@ func runInspect(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Println(color.CyanString("\n=== Repository Inspection ===\n"))
-	fmt.Println(color.YellowString("Basic Information:"))
-	fmt.Printf("  Name: %s\n", info.Name)
-	fmt.Printf("  Type: %s\n", info.Type)
-	fmt.Printf("  Path: %s\n", info.Path)
-	
+	// Header
+	cyan := color.New(color.FgCyan, color.Bold)
+	green := color.New(color.FgGreen, color.Bold)
+	yellow := color.New(color.FgYellow, color.Bold)
+	magenta := color.New(color.FgMagenta)
+
+	fmt.Println()
+	cyan.Println("╔════════════════════════════════════════════════════════════╗")
+	cyan.Println("║          Repository Inspection Report                     ║")
+	cyan.Println("╚════════════════════════════════════════════════════════════╝")
+	fmt.Println()
+
+	// System Information
+	yellow.Println("⚙️  System Information")
+	fmt.Printf("  ├─ Platform: %s\n", green.Sprint(info.Platform))
+	fmt.Printf("  ├─ OS: %s\n", green.Sprint(info.OS))
+	fmt.Printf("  └─ Architecture: %s\n", green.Sprint(info.Arch))
+	fmt.Println()
+
+	// Basic Information
+	yellow.Println("📦 Repository Information")
+	fmt.Printf("  ├─ Name: %s\n", green.Sprint(info.Name))
+	fmt.Printf("  ├─ Type: %s\n", magenta.Sprint(info.Type))
+	fmt.Printf("  ├─ Path: %s\n", info.Path)
 	if info.Description != "" {
-		fmt.Printf("  Description: %s\n", info.Description)
+		fmt.Printf("  └─ Description: %s\n", info.Description)
 	}
+	fmt.Println()
 
+	// Technology Stack
 	if len(info.Languages) > 0 {
-		fmt.Println(color.YellowString("\nTechnology:"))
-		fmt.Printf("  Languages: %s\n", strings.Join(info.Languages, ", "))
+		yellow.Println("💻 Technology Stack")
+		for i, lang := range info.Languages {
+			if i == len(info.Languages)-1 && len(info.Frameworks) == 0 && len(info.BuildTools) == 0 {
+				fmt.Printf("  └─ Language: %s\n", green.Sprint(lang))
+			} else {
+				fmt.Printf("  ├─ Language: %s\n", green.Sprint(lang))
+			}
+		}
+
+		if len(info.Frameworks) > 0 {
+			for i, fw := range info.Frameworks {
+				if i == len(info.Frameworks)-1 && len(info.BuildTools) == 0 {
+					fmt.Printf("  └─ Framework: %s\n", green.Sprint(fw))
+				} else {
+					fmt.Printf("  ├─ Framework: %s\n", green.Sprint(fw))
+				}
+			}
+		}
+
+		if len(info.BuildTools) > 0 {
+			for i, tool := range info.BuildTools {
+				if i == len(info.BuildTools)-1 {
+					fmt.Printf("  └─ Build Tool: %s\n", green.Sprint(tool))
+				} else {
+					fmt.Printf("  ├─ Build Tool: %s\n", green.Sprint(tool))
+				}
+			}
+		}
+		fmt.Println()
 	}
 
-	if len(info.Frameworks) > 0 {
-		fmt.Printf("  Frameworks: %s\n", strings.Join(info.Frameworks, ", "))
-	}
-
+	// Infrastructure
 	infraItems := []string{}
 	if info.HasDocker {
-		infraItems = append(infraItems, "Docker")
+		infraItems = append(infraItems, "🐳 Docker")
 	}
 	if info.HasKubernetes {
-		infraItems = append(infraItems, "Kubernetes")
+		infraItems = append(infraItems, "☸️  Kubernetes")
 	}
 	if info.HasHelm {
-		infraItems = append(infraItems, "Helm")
+		infraItems = append(infraItems, "⎈  Helm")
+	}
+	if info.HasTerraform {
+		infraItems = append(infraItems, "🏗️  Terraform")
 	}
 
 	if len(infraItems) > 0 {
-		fmt.Println(color.YellowString("\nInfrastructure:"))
-		fmt.Printf("  %s\n", strings.Join(infraItems, ", "))
+		yellow.Println("🏗️  Infrastructure")
+		for i, item := range infraItems {
+			if i == len(infraItems)-1 {
+				fmt.Printf("  └─ %s\n", green.Sprint(item))
+			} else {
+				fmt.Printf("  ├─ %s\n", green.Sprint(item))
+			}
+		}
+		fmt.Println()
 	}
 
-	fmt.Println(color.CyanString("\n=== End Inspection ===\n"))
+	// Git Information
+	if info.GitRemote != "" {
+		yellow.Println("🔗 Git Information")
+		fmt.Printf("  └─ Remote: %s\n", green.Sprint(info.GitRemote))
+		fmt.Println()
+	}
+
+	cyan.Println("✓ Inspection complete!")
+	fmt.Println()
 	return nil
 }

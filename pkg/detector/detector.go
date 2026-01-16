@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -15,22 +16,25 @@ type Detector struct {
 }
 
 type RepositoryInfo struct {
-	Name          string              `json:"name"`
-	Path          string              `json:"path"`
-	Type          string              `json:"type"`
-	Description   string              `json:"description"`
-	GitRemote     string              `json:"git_remote,omitempty"`
-	DefaultOwner  string              `json:"default_owner,omitempty"`
-	Languages     []string            `json:"languages"`
-	Frameworks    []string            `json:"frameworks"`
-	BuildTools    []string            `json:"build_tools"`
-	HasDocker     bool                `json:"has_docker"`
-	HasKubernetes bool                `json:"has_kubernetes"`
-	HasHelm       bool                `json:"has_helm"`
-	HasTerraform  bool                `json:"has_terraform"`
-	Dependencies  []Dependency        `json:"dependencies,omitempty"`
-	KeyFiles      []string            `json:"key_files,omitempty"`
-	Metadata      map[string]string   `json:"metadata,omitempty"`
+	Name          string            `json:"name"`
+	Path          string            `json:"path"`
+	Type          string            `json:"type"`
+	Description   string            `json:"description"`
+	GitRemote     string            `json:"git_remote,omitempty"`
+	DefaultOwner  string            `json:"default_owner,omitempty"`
+	OS            string            `json:"os"`
+	Platform      string            `json:"platform"`
+	Arch          string            `json:"arch"`
+	Languages     []string          `json:"languages"`
+	Frameworks    []string          `json:"frameworks"`
+	BuildTools    []string          `json:"build_tools"`
+	HasDocker     bool              `json:"has_docker"`
+	HasKubernetes bool              `json:"has_kubernetes"`
+	HasHelm       bool              `json:"has_helm"`
+	HasTerraform  bool              `json:"has_terraform"`
+	Dependencies  []Dependency      `json:"dependencies,omitempty"`
+	KeyFiles      []string          `json:"key_files,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 type Dependency struct {
@@ -47,6 +51,9 @@ func (d *Detector) Detect() (*RepositoryInfo, error) {
 	info := &RepositoryInfo{
 		Path:         d.rootPath,
 		Name:         filepath.Base(d.rootPath),
+		OS:           runtime.GOOS,
+		Platform:     getPlatformName(),
+		Arch:         runtime.GOARCH,
 		Languages:    []string{},
 		Frameworks:   []string{},
 		BuildTools:   []string{},
@@ -91,22 +98,38 @@ func (d *Detector) detectGitInfo(info *RepositoryInfo) {
 
 func (d *Detector) detectLanguages(info *RepositoryInfo) {
 	languageMarkers := map[string][]string{
-		"Go":         {"go.mod", "go.sum"},
-		"Python":     {"requirements.txt", "setup.py", "pyproject.toml"},
-		"JavaScript": {"package.json"},
-		"TypeScript": {"tsconfig.json"},
-		"Java":       {"pom.xml", "build.gradle"},
-		"Rust":       {"Cargo.toml"},
-		"Ruby":       {"Gemfile"},
-		"PHP":        {"composer.json"},
-		"C#":         {".csproj", ".sln"},
+		"Go":         {"go.mod", "go.sum", "main.go"},
+		"Python":     {"requirements.txt", "setup.py", "pyproject.toml", "Pipfile"},
+		"JavaScript": {"package.json", "yarn.lock"},
+		"TypeScript": {"tsconfig.json", "package.json"},
+		"Java":       {"pom.xml", "build.gradle", "build.gradle.kts"},
+		"Rust":       {"Cargo.toml", "Cargo.lock"},
+		"Ruby":       {"Gemfile", "Rakefile", ".ruby-version"},
+		"PHP":        {"composer.json", "composer.lock"},
+		"C#":         {".csproj", ".sln", "paket.dependencies"},
+		"C++":        {"CMakeLists.txt", "Makefile", ".cpp"},
+		"Swift":      {"Package.swift", ".swift"},
+		"Kotlin":     {"build.gradle.kts", ".kt"},
+		"Scala":      {"build.sbt", ".scala"},
+		"Elixir":     {"mix.exs", ".ex"},
+		"Haskell":    {"stack.yaml", "cabal.project", ".hs"},
+		"Clojure":    {"project.clj", "deps.edn"},
+		"Perl":       {"cpanfile", ".pl"},
+		"Lua":        {".lua", "rockspec"},
+		"R":          {"DESCRIPTION", ".R"},
+		"Dart":       {"pubspec.yaml", ".dart"},
+		"Shell":      {".sh", "Dockerfile"},
 	}
 
 	for lang, markers := range languageMarkers {
 		for _, marker := range markers {
-			if d.fileExists(marker) {
-				info.Languages = append(info.Languages, lang)
-				info.KeyFiles = append(info.KeyFiles, marker)
+			if d.fileExists(marker) || d.hasFilesWithExtension(marker) {
+				if !contains(info.Languages, lang) {
+					info.Languages = append(info.Languages, lang)
+					if marker != "" && !strings.HasPrefix(marker, ".") {
+						info.KeyFiles = append(info.KeyFiles, marker)
+					}
+				}
 				break
 			}
 		}
@@ -114,28 +137,75 @@ func (d *Detector) detectLanguages(info *RepositoryInfo) {
 }
 
 func (d *Detector) detectFrameworks(info *RepositoryInfo) {
+	// JavaScript/TypeScript frameworks
 	if d.fileExists("package.json") {
 		content, _ := os.ReadFile(filepath.Join(d.rootPath, "package.json"))
 		text := string(content)
-		if strings.Contains(text, "\"react\"") {
-			info.Frameworks = append(info.Frameworks, "React")
+		frameworks := map[string]string{
+			"\"react\"":   "React",
+			"\"vue\"":     "Vue",
+			"\"angular\"": "Angular",
+			"\"express\"": "Express",
+			"\"next\"":    "Next.js",
+			"\"nuxt\"":    "Nuxt",
+			"\"svelte\"":  "Svelte",
+			"\"nestjs\"":  "NestJS",
+			"\"gatsby\"":  "Gatsby",
+			"\"remix\"":   "Remix",
 		}
-		if strings.Contains(text, "\"vue\"") {
-			info.Frameworks = append(info.Frameworks, "Vue")
-		}
-		if strings.Contains(text, "\"express\"") {
-			info.Frameworks = append(info.Frameworks, "Express")
+		for pattern, name := range frameworks {
+			if strings.Contains(text, pattern) && !contains(info.Frameworks, name) {
+				info.Frameworks = append(info.Frameworks, name)
+			}
 		}
 	}
 
-	if d.fileExists("requirements.txt") {
+	// Python frameworks
+	if d.fileExists("requirements.txt") || d.fileExists("pyproject.toml") {
 		content, _ := os.ReadFile(filepath.Join(d.rootPath, "requirements.txt"))
 		text := string(content)
-		if strings.Contains(text, "django") {
-			info.Frameworks = append(info.Frameworks, "Django")
+		frameworks := map[string]string{
+			"django":    "Django",
+			"flask":     "Flask",
+			"fastapi":   "FastAPI",
+			"tornado":   "Tornado",
+			"pyramid":   "Pyramid",
+			"streamlit": "Streamlit",
 		}
-		if strings.Contains(text, "flask") {
-			info.Frameworks = append(info.Frameworks, "Flask")
+		for pattern, name := range frameworks {
+			if strings.Contains(strings.ToLower(text), pattern) && !contains(info.Frameworks, name) {
+				info.Frameworks = append(info.Frameworks, name)
+			}
+		}
+	}
+
+	// Java frameworks
+	if d.fileExists("pom.xml") || d.fileExists("build.gradle") {
+		content, _ := os.ReadFile(filepath.Join(d.rootPath, "pom.xml"))
+		text := string(content)
+		frameworks := map[string]string{
+			"spring-boot":      "Spring Boot",
+			"spring-framework": "Spring",
+			"quarkus":          "Quarkus",
+			"micronaut":        "Micronaut",
+			"vertx":            "Vert.x",
+		}
+		for pattern, name := range frameworks {
+			if strings.Contains(strings.ToLower(text), pattern) && !contains(info.Frameworks, name) {
+				info.Frameworks = append(info.Frameworks, name)
+			}
+		}
+	}
+
+	// Ruby frameworks
+	if d.fileExists("Gemfile") {
+		content, _ := os.ReadFile(filepath.Join(d.rootPath, "Gemfile"))
+		text := string(content)
+		if strings.Contains(text, "rails") && !contains(info.Frameworks, "Rails") {
+			info.Frameworks = append(info.Frameworks, "Rails")
+		}
+		if strings.Contains(text, "sinatra") && !contains(info.Frameworks, "Sinatra") {
+			info.Frameworks = append(info.Frameworks, "Sinatra")
 		}
 	}
 }
@@ -252,6 +322,14 @@ func (d *Detector) isFrontend(info *RepositoryInfo) bool {
 	return false
 }
 
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
 func (d *Detector) fileExists(path string) bool {
 	fullPath := filepath.Join(d.rootPath, path)
 	info, err := os.Stat(fullPath)
@@ -283,4 +361,19 @@ func extractRepoName(url string) string {
 		return strings.TrimSuffix(matches[1], ".git")
 	}
 	return ""
+}
+
+func getPlatformName() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	case "freebsd":
+		return "FreeBSD"
+	default:
+		return runtime.GOOS
+	}
 }

@@ -16,13 +16,30 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "backstage-gen",
-	Short: "Backstage catalog generator and validator",
-	Long: `A CLI tool for generating and validating Backstage catalog-info.yaml files.
+	Use:   "backstage-gen-cli",
+	Short: "🚀 Backstage catalog generator and validator",
+	Long: `╔════════════════════════════════════════════════════════════╗
+║  Backstage Catalog Generator                              ║
+╚════════════════════════════════════════════════════════════╝
 
-backstage-gen inspects your repository to automatically detect technology stack,
-dependencies, and organizational patterns to generate properly formatted
-Backstage catalog files.`,
+A powerful CLI tool for generating and validating Backstage 
+catalog-info.yaml files.
+
+✨ Features:
+  • Auto-detect technology stack from your repository
+  • Generate catalog files with best practices
+  • Validate against Backstage schema
+  • Manage git hooks for automated validation
+  • Cross-platform support (macOS, Linux, Windows)
+
+📚 Quick Start:
+  backstage-gen-cli inspect          # Inspect your repository
+  backstage-gen-cli generate         # Generate catalog file
+  backstage-gen-cli lint             # Validate catalog file
+  backstage-gen-cli hooks install    # Set up git hooks
+
+📖 Documentation:
+  https://github.com/gautampachnanda101/backstage-gen-cli`,
 	Version: version,
 }
 
