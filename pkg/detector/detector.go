@@ -267,23 +267,112 @@ func (d *Detector) detectType(info *RepositoryInfo) {
 }
 
 func (d *Detector) detectDescription(info *RepositoryInfo) {
-	for _, name := range []string{"README.md", "readme.md"} {
+	for _, name := range []string{"README.md", "readme.md", "README", "readme.txt"} {
 		path := filepath.Join(d.rootPath, name)
 		if content, err := os.ReadFile(path); err == nil {
-			lines := strings.Split(string(content), "\n")
+			// Clean the entire content first to handle multi-line HTML
+			cleaned := cleanHTMLTags(string(content))
+			lines := strings.Split(cleaned, "\n")
+
+			var descriptionLines []string
+			inDescription := false
+
+			// Try to find a meaningful description
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "#") && len(line) > 10 {
-					info.Description = line
-					if len(info.Description) > 200 {
-						info.Description = info.Description[:197] + "..."
+
+				// Skip empty lines
+				if line == "" {
+					if inDescription && len(descriptionLines) > 0 {
+						// Empty line after we started collecting description - might be end
+						break
 					}
-					return
+					continue
 				}
+
+				// Skip markdown code blocks
+				if strings.HasPrefix(line, "```") {
+					break
+				}
+
+				// Skip markdown headings (but the content after ## is good to start collecting)
+				if strings.HasPrefix(line, "###") || strings.HasPrefix(line, "####") {
+					continue
+				}
+				if strings.HasPrefix(line, "# ") {
+					// Main heading - content after this is what we want
+					inDescription = true
+					continue
+				}
+				if strings.HasPrefix(line, "## ") {
+					// Sub-heading - stop collecting if we already have content
+					if len(descriptionLines) > 0 {
+						break
+					}
+					continue
+				}
+
+				// Skip badge/shield lines
+				if strings.Contains(line, "badge") || strings.Contains(line, "shields.io") {
+					continue
+				}
+				// Skip separator lines
+				if strings.Trim(line, "-=_*") == "" {
+					continue
+				}
+
+				// Collect substantial lines (at least 20 chars)
+				if len(line) > 20 {
+					descriptionLines = append(descriptionLines, line)
+					inDescription = true
+
+					// Stop if we have enough content (2-3 sentences)
+					combined := strings.Join(descriptionLines, " ")
+					if len(combined) > 150 || len(descriptionLines) >= 3 {
+						break
+					}
+				}
+			}
+
+			// Combine collected lines
+			if len(descriptionLines) > 0 {
+				info.Description = strings.Join(descriptionLines, " ")
+				if len(info.Description) > 250 {
+					info.Description = info.Description[:247] + "..."
+				}
+				return
 			}
 		}
 	}
 	info.Description = fmt.Sprintf("A %s application", info.Type)
+}
+
+// cleanHTMLTags removes HTML tags from a string
+func cleanHTMLTags(s string) string {
+	// Remove multi-line HTML blocks (div, img, etc.)
+	// This regex handles tags that span multiple lines
+	htmlBlockRe := regexp.MustCompile(`<[^>]*>`)
+	s = htmlBlockRe.ReplaceAllString(s, "")
+
+	// Remove markdown links but keep the text
+	// [text](url) -> text
+	markdownLinkRe := regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+	s = markdownLinkRe.ReplaceAllString(s, "$1")
+
+	// Remove markdown images
+	// ![alt](url) -> ""
+	markdownImgRe := regexp.MustCompile(`!\[([^\]]*)\]\([^)]+\)`)
+	s = markdownImgRe.ReplaceAllString(s, "")
+
+	// Remove standalone URLs
+	urlRe := regexp.MustCompile(`https?://[^\s]+`)
+	s = urlRe.ReplaceAllString(s, "")
+
+	// Clean up multiple spaces and newlines
+	s = regexp.MustCompile(`\s+`).ReplaceAllString(s, " ")
+	s = regexp.MustCompile(`\n+`).ReplaceAllString(s, "\n")
+
+	return strings.TrimSpace(s)
 }
 
 func (d *Detector) detectOwner(info *RepositoryInfo) {
