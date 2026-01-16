@@ -5,23 +5,46 @@
 *.dylib
 *.test
 *.out
+backstage-gen-cli
 
 # Build directory
 bin/
 dist/
+release/
 
 # IDE
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Config
+# Config (user-specific)
 .backstage-gen.yaml
 !.backstage-gen.yaml.example
 
 # Test artifacts
 coverage.html
+coverage.out
 catalog-info.yaml
+*.log
+
+# Test directories (cloned repos for testing)
+rust-test/
+rust-test2/
+test-repo/
+*-test/
+
+# Go specific
+go.work
+go.work.sum
+vendor/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

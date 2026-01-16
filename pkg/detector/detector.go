@@ -8,11 +8,45 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/llm"
 	"github.com/go-git/go-git/v5"
 )
 
+// LLMClient is satisfied by *llm.Client via the llmClientAdapter
+type LLMClient interface {
+	AnalyzeLanguages(fileInfo string) (LanguageAnalysis, error)
+}
+
+// LanguageAnalysis represents the result of LLM-based language detection
+type LanguageAnalysis struct {
+	PrimaryLanguage    string   `json:"primary_language"`
+	SecondaryLanguages []string `json:"secondary_languages"`
+	Confidence         string   `json:"confidence"`
+	Reasoning          string   `json:"reasoning"`
+}
+
+// llmClientAdapter wraps an *llm.Client to adapt its AnalyzeLanguages method
+type llmClientAdapter struct {
+	client *llm.Client
+}
+
+func (a *llmClientAdapter) AnalyzeLanguages(fileInfo string) (LanguageAnalysis, error) {
+	result, err := a.client.AnalyzeLanguages(fileInfo)
+	if err != nil {
+		return LanguageAnalysis{}, err
+	}
+	// Convert llm.LanguageAnalysis to detector.LanguageAnalysis
+	return LanguageAnalysis{
+		PrimaryLanguage:    result.PrimaryLanguage,
+		SecondaryLanguages: result.SecondaryLanguages,
+		Confidence:         result.Confidence,
+		Reasoning:          result.Reasoning,
+	}, nil
+}
+
 type Detector struct {
-	rootPath string
+	rootPath  string
+	llmClient LLMClient
 }
 
 type RepositoryInfo struct {
@@ -44,7 +78,14 @@ type Dependency struct {
 }
 
 func New(rootPath string) *Detector {
-	return &Detector{rootPath: rootPath}
+	return &Detector{rootPath: rootPath, llmClient: nil}
+}
+
+func NewWithLLM(rootPath string, llmclient *llm.Client) *Detector {
+	return &Detector{
+		rootPath:  rootPath,
+		llmClient: &llmClientAdapter{client: llmclient},
+	}
 }
 
 func (d *Detector) Detect() (*RepositoryInfo, error) {
@@ -97,43 +138,195 @@ func (d *Detector) detectGitInfo(info *RepositoryInfo) {
 }
 
 func (d *Detector) detectLanguages(info *RepositoryInfo) {
+	// HYBRID STRATEGY: Fast pattern detection first, LLM for disambiguation
+	// This is faster and more reliable than LLM-first approach
+
+	// Priority-ordered language markers (most definitive files first)
+	// These are checked at root level only for speed
 	languageMarkers := map[string][]string{
 		"Go":         {"go.mod", "go.sum", "main.go"},
-		"Python":     {"requirements.txt", "setup.py", "pyproject.toml", "Pipfile"},
-		"JavaScript": {"package.json", "yarn.lock"},
-		"TypeScript": {"tsconfig.json", "package.json"},
-		"Java":       {"pom.xml", "build.gradle", "build.gradle.kts"},
 		"Rust":       {"Cargo.toml", "Cargo.lock"},
+		"Python":     {"pyproject.toml", "setup.py", "requirements.txt", "Pipfile"},
+		"TypeScript": {"tsconfig.json"},
+		"JavaScript": {"package.json", "yarn.lock"},
+		"Java":       {"pom.xml", "build.gradle", "build.gradle.kts"},
 		"Ruby":       {"Gemfile", "Rakefile", ".ruby-version"},
 		"PHP":        {"composer.json", "composer.lock"},
 		"C#":         {".csproj", ".sln", "paket.dependencies"},
-		"C++":        {"CMakeLists.txt", "Makefile", ".cpp"},
-		"Swift":      {"Package.swift", ".swift"},
-		"Kotlin":     {"build.gradle.kts", ".kt"},
-		"Scala":      {"build.sbt", ".scala"},
-		"Elixir":     {"mix.exs", ".ex"},
-		"Haskell":    {"stack.yaml", "cabal.project", ".hs"},
+		"C++":        {"CMakeLists.txt"},
+		"Swift":      {"Package.swift"},
+		"Kotlin":     {"build.gradle.kts"},
+		"Scala":      {"build.sbt"},
+		"Elixir":     {"mix.exs"},
+		"Haskell":    {"stack.yaml", "cabal.project"},
 		"Clojure":    {"project.clj", "deps.edn"},
-		"Perl":       {"cpanfile", ".pl"},
-		"Lua":        {".lua", "rockspec"},
-		"R":          {"DESCRIPTION", ".R"},
-		"Dart":       {"pubspec.yaml", ".dart"},
-		"Shell":      {".sh", "Dockerfile"},
+		"Dart":       {"pubspec.yaml"},
 	}
 
+	// Step 1: Fast root-level file check (definitive markers)
+	detectedLanguages := []string{}
 	for lang, markers := range languageMarkers {
 		for _, marker := range markers {
-			if d.fileExists(marker) || d.hasFilesWithExtension(marker) {
-				if !contains(info.Languages, lang) {
-					info.Languages = append(info.Languages, lang)
-					if marker != "" && !strings.HasPrefix(marker, ".") {
-						info.KeyFiles = append(info.KeyFiles, marker)
-					}
+			found := false
+			if strings.HasPrefix(marker, ".") {
+				// Extension marker (e.g., ".csproj", ".sln") - check for files with this extension
+				found = d.hasFilesWithExtensionInRoot(marker)
+			} else {
+				// Exact filename marker (e.g., "go.mod", "Cargo.toml")
+				found = d.fileExists(marker)
+			}
+			if found {
+				if !contains(detectedLanguages, lang) {
+					detectedLanguages = append(detectedLanguages, lang)
+					info.KeyFiles = append(info.KeyFiles, marker)
 				}
 				break
 			}
 		}
 	}
+
+	// Step 2: If we found a clear primary language, use it
+	if len(detectedLanguages) == 1 {
+		info.Languages = detectedLanguages
+		fmt.Fprintf(os.Stderr, "[PATTERN] Single language detected: %s\n", detectedLanguages[0])
+		return
+	}
+
+	// Step 3: If multiple languages detected, determine primary
+	if len(detectedLanguages) > 1 {
+		fmt.Fprintf(os.Stderr, "[PATTERN] Multiple languages detected: %v\n", detectedLanguages)
+
+		// Use LLM to determine primary if available
+		if d.llmClient != nil {
+			if analysis, err := d.analyzeLanguagesWithLLM(info); err == nil {
+				if analysis.Confidence == "high" || analysis.Confidence == "medium" {
+					// Validate LLM result against pattern detection
+					if contains(detectedLanguages, analysis.PrimaryLanguage) {
+						// LLM agrees with pattern detection - reorder with primary first
+						info.Languages = []string{analysis.PrimaryLanguage}
+						for _, lang := range detectedLanguages {
+							if lang != analysis.PrimaryLanguage && !contains(info.Languages, lang) {
+								info.Languages = append(info.Languages, lang)
+							}
+						}
+						fmt.Fprintf(os.Stderr, "[LLM] Primary language: %s (validated against pattern detection)\n", analysis.PrimaryLanguage)
+						return
+					}
+					fmt.Fprintf(os.Stderr, "[LLM] Primary language %s not in pattern results %v, using pattern detection\n", analysis.PrimaryLanguage, detectedLanguages)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "[LLM] Error: %v, using pattern detection\n", err)
+			}
+		}
+
+		// Fallback: Use detection order (first found = primary)
+		info.Languages = detectedLanguages
+		return
+	}
+
+	// Step 4: No root-level markers found - do extension scan
+	fmt.Fprintf(os.Stderr, "[PATTERN] No root markers, scanning extensions...\n")
+	extensionMarkers := map[string]string{
+		".go":    "Go",
+		".rs":    "Rust",
+		".py":    "Python",
+		".ts":    "TypeScript",
+		".tsx":   "TypeScript",
+		".js":    "JavaScript",
+		".jsx":   "JavaScript",
+		".java":  "Java",
+		".rb":    "Ruby",
+		".php":   "PHP",
+		".cs":    "C#",
+		".cpp":   "C++",
+		".c":     "C",
+		".swift": "Swift",
+		".kt":    "Kotlin",
+		".scala": "Scala",
+		".ex":    "Elixir",
+		".hs":    "Haskell",
+		".clj":   "Clojure",
+		".dart":  "Dart",
+		".sh":    "Shell",
+	}
+
+	for ext, lang := range extensionMarkers {
+		if d.hasFilesWithExtension(ext) {
+			if !contains(info.Languages, lang) {
+				info.Languages = append(info.Languages, lang)
+			}
+		}
+	}
+
+	// Add Makefile detection
+	if d.fileExists("Makefile") && !contains(info.BuildTools, "Make") {
+		info.BuildTools = append(info.BuildTools, "Make")
+	}
+	if d.fileExists("Dockerfile") {
+		info.HasDocker = true
+	}
+}
+
+// analyzeLanguagesWithLLM gathers file statistics and uses LLM to detect languages
+func (d *Detector) analyzeLanguagesWithLLM(info *RepositoryInfo) (LanguageAnalysis, error) {
+	// Gather file statistics
+	fileStats := make(map[string]int)
+	keyFiles := []string{}
+
+	err := filepath.Walk(d.rootPath, func(path string, fileInfo os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+		if fileInfo.IsDir() {
+			// Skip common directories
+			name := fileInfo.Name()
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == "target" || name == ".venv" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Count file extensions
+		ext := filepath.Ext(path)
+		if ext != "" {
+			fileStats[ext]++
+		}
+
+		// Track key files
+		baseName := filepath.Base(path)
+		keyFilePatterns := []string{
+			"go.mod", "Cargo.toml", "package.json", "pom.xml", "build.gradle",
+			"requirements.txt", "Gemfile", "composer.json", "Package.swift",
+		}
+		for _, pattern := range keyFilePatterns {
+			if baseName == pattern {
+				relPath, _ := filepath.Rel(d.rootPath, path)
+				keyFiles = append(keyFiles, relPath)
+				break
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return LanguageAnalysis{}, err
+	}
+
+	// Build file info summary
+	var fileInfo strings.Builder
+	fileInfo.WriteString("File Statistics:\n")
+	for ext, count := range fileStats {
+		fileInfo.WriteString(fmt.Sprintf("  %s: %d files\n", ext, count))
+	}
+	if len(keyFiles) > 0 {
+		fileInfo.WriteString("\nKey Files Found:\n")
+		for _, kf := range keyFiles {
+			fileInfo.WriteString(fmt.Sprintf("  - %s\n", kf))
+		}
+	}
+
+	return d.llmClient.AnalyzeLanguages(fileInfo.String())
 }
 
 func (d *Detector) detectFrameworks(info *RepositoryInfo) {
@@ -441,6 +634,21 @@ func (d *Detector) hasFilesWithExtension(ext string) bool {
 		return nil
 	})
 	return found
+}
+
+// hasFilesWithExtensionInRoot checks only the root directory for files with the given extension
+// This is faster than walking the entire tree and is used for language detection
+func (d *Detector) hasFilesWithExtensionInRoot(ext string) bool {
+	entries, err := os.ReadDir(d.rootPath)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractRepoName(url string) string {

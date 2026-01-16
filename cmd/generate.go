@@ -101,8 +101,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		cyan.Printf("🔍 Analyzing repository at: %s\n", cwd)
 	}
 
-	// Detect repository information
-	det := detector.New(cwd)
+	// Detect repository information with LLM-powered language detection
+	var det *detector.Detector
+	if llmClient != nil && llmClient.IsAvailable() {
+		det = detector.NewWithLLM(cwd, llmClient)
+	} else {
+		det = detector.New(cwd)
+	}
+
 	info, err := det.Detect()
 	if err != nil {
 		return fmt.Errorf("failed to detect repository information: %w", err)
