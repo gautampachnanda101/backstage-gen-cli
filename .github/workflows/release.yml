@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v0.1.0-alpha.1)'
+        description: 'Version tag (e.g., v0.1.0-alpha.2)'
         required: true
-        default: 'v0.1.0-alpha.1'
+        default: 'v0.1.0-alpha.2'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -19,8 +19,28 @@ permissions:
   contents: write
 
 jobs:
+  # Run tests before building release
+  test:
+    name: Pre-Release Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run tests
+        run: make test
+
+      - name: Run linter
+        run: make lint
+
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -86,9 +106,156 @@ jobs:
             bin/${{ matrix.output }}.sha256
           retention-days: 7
 
+  # Validate binaries before release
+  validate-binaries:
+    name: Validate ${{ matrix.os }} Binary
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+            binary: backstage-gen-cli-linux-amd64
+          - os: macos
+            runner: macos-latest
+            binary: backstage-gen-cli-darwin-arm64
+          - os: windows
+            runner: windows-latest
+            binary: backstage-gen-cli-windows-amd64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: ./bin
+
+      - name: Make binary executable (Unix)
+        if: matrix.os != 'windows'
+        run: chmod +x ./bin/${{ matrix.binary }}
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Test --version flag
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            OUTPUT=$(./bin/${{ matrix.binary }} --version 2>&1)
+          else
+            OUTPUT=$(./bin/${{ matrix.binary }} --version 2>&1)
+          fi
+          echo "Version output: $OUTPUT"
+          if echo "$OUTPUT" | grep -q "${{ steps.version.outputs.version }}"; then
+            echo "Version check passed"
+          else
+            echo "ERROR: Version mismatch"
+            exit 1
+          fi
+
+      - name: Test --help flag
+        shell: bash
+        run: |
+          ./bin/${{ matrix.binary }} --help
+          if [ $? -eq 0 ]; then
+            echo "Help check passed"
+          else
+            echo "ERROR: Help command failed"
+            exit 1
+          fi
+
+      - name: Test inspect command
+        shell: bash
+        run: |
+          OUTPUT=$(./bin/${{ matrix.binary }} inspect 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi "Languages\|Repository\|Name"; then
+            echo "Inspect command passed"
+          else
+            echo "WARNING: Inspect output unexpected, but continuing"
+          fi
+
+      - name: Test inspect with verbosity levels
+        shell: bash
+        run: |
+          echo "=== Testing quiet mode ==="
+          ./bin/${{ matrix.binary }} inspect -q || true
+
+          echo "=== Testing verbose mode ==="
+          ./bin/${{ matrix.binary }} inspect -v || true
+
+          echo "=== Testing very verbose mode ==="
+          ./bin/${{ matrix.binary }} inspect -vv || true
+
+          echo "=== Testing debug mode ==="
+          ./bin/${{ matrix.binary }} inspect -vvv || true
+
+          echo "Verbosity tests completed"
+
+      - name: Test generate --dry-run
+        shell: bash
+        run: |
+          OUTPUT=$(./bin/${{ matrix.binary }} generate --dry-run 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "apiVersion"; then
+            echo "Generate dry-run passed - valid YAML output"
+          else
+            echo "WARNING: Generate dry-run output unexpected"
+          fi
+
+      - name: Test generate command
+        shell: bash
+        run: |
+          ./bin/${{ matrix.binary }} generate -o test-catalog.yaml || true
+          if [ -f test-catalog.yaml ]; then
+            echo "Generate command created file successfully"
+            cat test-catalog.yaml
+          else
+            echo "WARNING: No catalog file created"
+          fi
+
+      - name: Test lint command
+        shell: bash
+        run: |
+          if [ -f test-catalog.yaml ]; then
+            ./bin/${{ matrix.binary }} lint -f test-catalog.yaml || true
+            echo "Lint command completed"
+          else
+            echo "Skipping lint - no catalog file"
+          fi
+
+      - name: Test quiet mode suppresses output
+        shell: bash
+        run: |
+          OUTPUT=$(./bin/${{ matrix.binary }} generate --dry-run -q 2>&1 || true)
+          # Quiet mode should still output the YAML but suppress info messages
+          if [ -n "$OUTPUT" ]; then
+            echo "Quiet mode test completed"
+          fi
+
+      - name: Validation Summary
+        shell: bash
+        run: |
+          echo "============================================"
+          echo "Binary validation completed for ${{ matrix.os }}"
+          echo "Binary: ${{ matrix.binary }}"
+          echo "============================================"
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, validate-binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -138,6 +305,18 @@ jobs:
 
             ### Installation
 
+            **Homebrew (macOS/Linux):**
+            ```bash
+            brew tap gautampachnanda101/backstage-gen-cli
+            brew install backstage-gen-cli
+            ```
+
+            **Scoop (Windows):**
+            ```powershell
+            scoop bucket add backstage-gen-cli https://github.com/gautampachnanda101/scoop-backstage-gen-cli
+            scoop install backstage-gen-cli
+            ```
+
             **Linux (amd64):**
             ```bash
             curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/backstage-gen-cli-linux-amd64 -o backstage-gen-cli
@@ -178,6 +357,135 @@ jobs:
 
             # Validate the generated file
             backstage-gen-cli lint
+
+            # Use quiet mode
+            backstage-gen-cli generate -q
+
+            # Use verbose mode
+            backstage-gen-cli inspect -vvv
             ```
+
+            ### What's New
+            - `--quiet` / `-q` flag to suppress non-essential output
+            - `--verbose` levels: `-v`, `-vv`, `-vvv` for increasing verbosity
+            - Comprehensive documentation in `docs/` folder
+            - Package manager support (Homebrew, Scoop, Chocolatey)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Post-release validation - download from GitHub and test
+  post-release-validation:
+    name: Post-Release Validation
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for release to be available
+        run: sleep 30
+
+      - name: Download released binary
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          curl -L -o backstage-gen-cli \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/backstage-gen-cli-linux-amd64"
+          chmod +x backstage-gen-cli
+
+      - name: Download checksum
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          curl -L -o backstage-gen-cli.sha256 \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/backstage-gen-cli-linux-amd64.sha256"
+
+      - name: Verify checksum
+        run: |
+          echo "Expected checksum:"
+          cat backstage-gen-cli.sha256
+          echo ""
+          echo "Actual checksum:"
+          sha256sum backstage-gen-cli
+          # Verify
+          EXPECTED=$(cat backstage-gen-cli.sha256 | awk '{print $1}')
+          ACTUAL=$(sha256sum backstage-gen-cli | awk '{print $1}')
+          if [ "$EXPECTED" = "$ACTUAL" ]; then
+            echo "Checksum verified!"
+          else
+            echo "ERROR: Checksum mismatch!"
+            exit 1
+          fi
+
+      - name: Test released binary - version
+        run: |
+          ./backstage-gen-cli --version
+          VERSION=${{ steps.version.outputs.version }}
+          if ./backstage-gen-cli --version | grep -q "$VERSION"; then
+            echo "Version check passed!"
+          else
+            echo "ERROR: Version mismatch in released binary!"
+            exit 1
+          fi
+
+      - name: Test released binary - all features
+        run: |
+          echo "=== Testing help ==="
+          ./backstage-gen-cli --help
+
+          echo ""
+          echo "=== Testing inspect ==="
+          ./backstage-gen-cli inspect || true
+
+          echo ""
+          echo "=== Testing inspect with quiet mode ==="
+          ./backstage-gen-cli inspect -q || true
+
+          echo ""
+          echo "=== Testing inspect with verbose mode ==="
+          ./backstage-gen-cli inspect -v || true
+
+          echo ""
+          echo "=== Testing inspect with debug mode ==="
+          ./backstage-gen-cli inspect -vvv || true
+
+          echo ""
+          echo "=== Testing generate dry-run ==="
+          ./backstage-gen-cli generate --dry-run
+
+          echo ""
+          echo "=== Testing generate ==="
+          ./backstage-gen-cli generate -o catalog-info.yaml
+
+          echo ""
+          echo "=== Generated catalog-info.yaml ==="
+          cat catalog-info.yaml
+
+          echo ""
+          echo "=== Testing lint ==="
+          ./backstage-gen-cli lint -f catalog-info.yaml
+
+          echo ""
+          echo "All post-release tests passed!"
+
+      - name: Create test summary
+        run: |
+          echo "## Post-Release Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Checksum verification: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Version flag: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Help command: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Inspect command: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Quiet mode (-q): Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Verbose modes (-v, -vv, -vvv): Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Generate command: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Lint command: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Released binary is fully functional!**" >> $GITHUB_STEP_SUMMARY

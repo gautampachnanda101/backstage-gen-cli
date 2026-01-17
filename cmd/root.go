@@ -3,16 +3,18 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
-	cfgFile     string
-	version     string
-	commitSHA   string
-	buildDate   string
-	verboseMode bool
+	cfgFile      string
+	version      string
+	commitSHA    string
+	buildDate    string
+	verboseLevel int
+	quietMode    bool
 )
 
 var rootCmd = &cobra.Command{
@@ -50,11 +52,21 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .backstage-gen.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().CountVarP(&verboseLevel, "verbose", "v", "increase verbosity (use -v, -vv, or -vvv)")
+	rootCmd.PersistentFlags().BoolVarP(&quietMode, "quiet", "q", false, "suppress non-essential output")
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
 }
 
 func initConfig() {
+	// Set verbosity level based on flags
+	if quietMode {
+		output.SetVerbosity(output.LevelQuiet)
+	} else {
+		// verboseLevel is 0 by default, 1 for -v, 2 for -vv, 3 for -vvv
+		output.SetVerbosity(output.LevelNormal + verboseLevel)
+	}
+
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
@@ -65,7 +77,7 @@ func initConfig() {
 	}
 	viper.SetEnvPrefix("BACKSTAGE_GEN")
 	viper.AutomaticEnv()
-	if err := viper.ReadInConfig(); err == nil && verboseMode {
+	if err := viper.ReadInConfig(); err == nil && output.IsVerbose() {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
 }

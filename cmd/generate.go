@@ -10,6 +10,7 @@ import (
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/detector"
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/generator"
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/llm"
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/output"
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/wizard"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -88,7 +89,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	var llmClient *llm.Client
 	if appConfig.LLM != nil {
 		llmClient = llm.NewClient(appConfig.LLM)
-		if !llmClient.IsAvailable() && verboseMode {
+		if !llmClient.IsAvailable() && output.IsVerbose() {
 			yellow := color.New(color.FgYellow)
 			yellow.Println("⚠️  LLM provider not available. Continuing without AI suggestions.")
 			yellow.Printf("   Tip: Make sure %s is running or update ~/.backstage-gen.yaml\n", appConfig.LLM.Provider)
@@ -96,7 +97,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if verboseMode {
+	if output.IsVerbose() {
 		cyan := color.New(color.FgCyan, color.Bold)
 		cyan.Printf("🔍 Analyzing repository at: %s\n", cwd)
 	}
@@ -114,7 +115,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to detect repository information: %w", err)
 	}
 
-	if verboseMode {
+	if output.IsVerbose() {
 		yellow := color.New(color.FgYellow, color.Bold)
 		fmt.Println("\nDetected:")
 		yellow.Printf("  ├─ Name: %s\n", info.Name)
@@ -213,16 +214,19 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	green := color.New(color.FgGreen, color.Bold)
 	absPath, _ := filepath.Abs(outputFile)
-	fmt.Println()
-	green.Println("✓ Catalog Generated Successfully!")
-	fmt.Printf("  📄 File: %s\n", color.CyanString(absPath))
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Printf("  1. Review: %s\n", color.CyanString("cat "+outputFile))
-	fmt.Printf("  2. Validate: %s\n", color.CyanString("backstage-gen-cli lint"))
-	fmt.Printf("  3. Commit: %s\n", color.CyanString("git add "+outputFile))
-	fmt.Println()
+
+	if output.IsNormal() {
+		green := color.New(color.FgGreen, color.Bold)
+		fmt.Println()
+		green.Println("✓ Catalog Generated Successfully!")
+		fmt.Printf("  📄 File: %s\n", color.CyanString(absPath))
+		fmt.Println()
+		fmt.Println("Next steps:")
+		fmt.Printf("  1. Review: %s\n", color.CyanString("cat "+outputFile))
+		fmt.Printf("  2. Validate: %s\n", color.CyanString("backstage-gen-cli lint"))
+		fmt.Printf("  3. Commit: %s\n", color.CyanString("git add "+outputFile))
+		fmt.Println()
+	}
 	return nil
 }

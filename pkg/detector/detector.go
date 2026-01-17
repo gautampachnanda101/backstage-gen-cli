@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/llm"
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/output"
 	"github.com/go-git/go-git/v5"
 )
 
@@ -188,13 +189,13 @@ func (d *Detector) detectLanguages(info *RepositoryInfo) {
 	// Step 2: If we found a clear primary language, use it
 	if len(detectedLanguages) == 1 {
 		info.Languages = detectedLanguages
-		fmt.Fprintf(os.Stderr, "[PATTERN] Single language detected: %s\n", detectedLanguages[0])
+		output.PrintDebug("[PATTERN] Single language detected: %s\n", detectedLanguages[0])
 		return
 	}
 
 	// Step 3: If multiple languages detected, determine primary
 	if len(detectedLanguages) > 1 {
-		fmt.Fprintf(os.Stderr, "[PATTERN] Multiple languages detected: %v\n", detectedLanguages)
+		output.PrintDebug("[PATTERN] Multiple languages detected: %v\n", detectedLanguages)
 
 		// Use LLM to determine primary if available
 		if d.llmClient != nil {
@@ -209,13 +210,13 @@ func (d *Detector) detectLanguages(info *RepositoryInfo) {
 								info.Languages = append(info.Languages, lang)
 							}
 						}
-						fmt.Fprintf(os.Stderr, "[LLM] Primary language: %s (validated against pattern detection)\n", analysis.PrimaryLanguage)
+						output.PrintDebug("[LLM] Primary language: %s (validated against pattern detection)\n", analysis.PrimaryLanguage)
 						return
 					}
-					fmt.Fprintf(os.Stderr, "[LLM] Primary language %s not in pattern results %v, using pattern detection\n", analysis.PrimaryLanguage, detectedLanguages)
+					output.PrintDebug("[LLM] Primary language %s not in pattern results %v, using pattern detection\n", analysis.PrimaryLanguage, detectedLanguages)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "[LLM] Error: %v, using pattern detection\n", err)
+				output.PrintDebug("[LLM] Error: %v, using pattern detection\n", err)
 			}
 		}
 
@@ -225,7 +226,7 @@ func (d *Detector) detectLanguages(info *RepositoryInfo) {
 	}
 
 	// Step 4: No root-level markers found - do extension scan
-	fmt.Fprintf(os.Stderr, "[PATTERN] No root markers, scanning extensions...\n")
+	output.PrintDebug("[PATTERN] No root markers, scanning extensions...\n")
 	extensionMarkers := map[string]string{
 		".go":    "Go",
 		".rs":    "Rust",

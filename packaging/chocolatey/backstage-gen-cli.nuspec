@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>backstage-gen-cli</id>
+    <version>0.1.0-alpha1</version>
+    <title>backstage-gen-cli</title>
+    <authors>gautampachnanda101</authors>
+    <owners>gautampachnanda101</owners>
+    <projectUrl>https://github.com/gautampachnanda101/backstage-gen-cli</projectUrl>
+    <licenseUrl>https://github.com/gautampachnanda101/backstage-gen-cli/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/gautampachnanda101/backstage-gen-cli</projectSourceUrl>
+    <docsUrl>https://github.com/gautampachnanda101/backstage-gen-cli/tree/main/docs</docsUrl>
+    <bugTrackerUrl>https://github.com/gautampachnanda101/backstage-gen-cli/issues</bugTrackerUrl>
+    <tags>backstage catalog yaml cli devops</tags>
+    <summary>CLI tool for generating and validating Backstage catalog-info.yaml files</summary>
+    <description>
+backstage-gen-cli is a Go-based CLI tool for streamlining Backstage catalog integration.
+
+Features:
+- Auto-detection of technology stack (20+ languages supported)
+- Cross-platform support (Windows, macOS, Linux)
+- AI-powered suggestions via LLM integration
+- Interactive wizard for guided catalog generation
+- YAML generation with proper formatting
+- Validation against Backstage schema
+- Pre-commit hook integration
+- Fast and portable single binary
+
+Commands:
+- inspect: Analyze repository and detect technology stack
+- generate: Generate catalog-info.yaml file
+- lint: Validate catalog files
+- hooks: Manage git hooks
+- init: Initialize with LLM support
+    </description>
+    <releaseNotes>https://github.com/gautampachnanda101/backstage-gen-cli/releases</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+    <file src="legal\**" target="legal" />
+  </files>
+</package>

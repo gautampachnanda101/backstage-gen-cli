@@ -9,6 +9,7 @@ import (
 	appconfig "github.com/gautampachnanda101/backstage-gen-cli/pkg/config"
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/detector"
 	"github.com/gautampachnanda101/backstage-gen-cli/pkg/llm"
+	"github.com/gautampachnanda101/backstage-gen-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -51,29 +52,29 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	// Try to load config for LLM support
 	appConfig, err := appconfig.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to load config: %v\n", err)
+		output.PrintDebug("Failed to load config: %v\n", err)
 	}
 
 	var llmClient *llm.Client
 	if appConfig != nil && appConfig.LLM != nil {
 		llmClient = llm.NewClient(appConfig.LLM)
 		if llmClient.IsAvailable() {
-			fmt.Fprintf(os.Stderr, "[DEBUG] LLM client is available\n")
+			output.PrintDebug("LLM client is available\n")
 		} else {
-			fmt.Fprintf(os.Stderr, "[DEBUG] LLM client is NOT available\n")
+			output.PrintDebug("LLM client is NOT available\n")
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "[DEBUG] No LLM config found\n")
+		output.PrintDebug("No LLM config found\n")
 	}
 
 	// Use LLM-enhanced detector if available
 	var det *detector.Detector
 	if llmClient != nil && llmClient.IsAvailable() {
 		det = detector.NewWithLLM(cwd, llmClient)
-		fmt.Fprintf(os.Stderr, "[DEBUG] Using LLM-enhanced detector\n")
+		output.PrintDebug("Using LLM-enhanced detector\n")
 	} else {
 		det = detector.New(cwd)
-		fmt.Fprintf(os.Stderr, "[DEBUG] Using standard detector\n")
+		output.PrintDebug("Using standard detector\n")
 	}
 
 	info, err := det.Detect()
@@ -84,6 +85,11 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	if jsonOutput {
 		data, _ := json.MarshalIndent(info, "", "  ")
 		fmt.Println(string(data))
+		return nil
+	}
+
+	// In quiet mode, just exit successfully
+	if output.IsQuiet() {
 		return nil
 	}
 

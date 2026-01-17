@@ -1,0 +1,23 @@
+{
+    "version": "0.1.0-alpha.1",
+    "description": "CLI tool for generating and validating Backstage catalog-info.yaml files",
+    "homepage": "https://github.com/gautampachnanda101/backstage-gen-cli",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/gautampachnanda101/backstage-gen-cli/releases/download/v0.1.0-alpha.1/backstage-gen-cli-windows-amd64.exe#/backstage-gen-cli.exe",
+            "hash": "PLACEHOLDER_WINDOWS_AMD64_SHA256"
+        }
+    },
+    "bin": "backstage-gen-cli.exe",
+    "checkver": {
+        "github": "https://github.com/gautampachnanda101/backstage-gen-cli"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/gautampachnanda101/backstage-gen-cli/releases/download/v$version/backstage-gen-cli-windows-amd64.exe#/backstage-gen-cli.exe"
+            }
+        }
+    }
+}
